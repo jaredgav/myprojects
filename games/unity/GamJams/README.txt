@@ -1,0 +1,1 @@
+This directory is for any GamJams I am a part of
