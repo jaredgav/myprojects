@@ -1,1 +1,1 @@
-This directory is for any GamJams I am a part of
+This directory is for any solo GamJams I am a part of
