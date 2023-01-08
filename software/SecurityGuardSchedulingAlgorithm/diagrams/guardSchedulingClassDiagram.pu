@@ -1,0 +1,27 @@
+@startuml title GuardSchedulingClassDiagram
+
+skinparam linetype ortho
+
+class Schedule{
+    List<Slot> slots
+}
+
+class Slot {
+    double startTime
+    double endTime
+    double duration
+}
+class ScheduleSlot
+class Guard
+class AvailabilitySlot
+note top of AvailabilitySlot
+    Defines the time slot where a guard might be avialable
+endnote
+
+' 
+ScheduleSlot -up-|> Slot
+AvailabilitySlot -up-|> Slot
+
+
+
+@enduml
