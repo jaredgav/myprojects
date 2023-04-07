@@ -17,6 +17,9 @@ class GuardEntry:
 
         # The duration of this entry by number of TimeSlots
         self.duration = duration
+    
+    def getInfo(self):
+        return "ID: %s \nStart Index: %d \nDuration: %d"%(str(self.id), self.slotIdx, self.duration)
 
 class TimeSlot:
     """ Describes a 30min slot in which a guard can work """
@@ -112,6 +115,7 @@ def sortGuardEntries(guardEntriesList):
     finalList = []
     # Insertion sort
     for entry in guardEntriesList:
+        i = 0
         for i in range(0, len(finalList)):
             if(len(finalList) == 0):
                 break
@@ -162,11 +166,6 @@ def createSchedule(guardEntriesList, numTimeSlots):
     # Return a tuple of guards in the schedule and the schedule itself
     return timeSlots, guardsInSchedule
 
-
-def createTestGuardEntries():
-    """ Creates a set of test guard availabilities """
-    entries = []
-    return entries
 
 if __name__ == "__main__":
     print("Running Scheduling Algorithm")
