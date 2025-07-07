@@ -4,6 +4,10 @@ from datetime import datetime
 
 class Loan(object):
     def __init__(self, label="None", start_date=datetime, start_bal=0, i_rate=0, balance=0, amt_due=0):
+        """
+        Creates a loan with the following params:
+            <label>,<start_date>,<start_balace>,<interest_rate>,<remaining_balance>,<amount_due>
+        """
         self.label = label
         self.start_date = start_date
         self.start_bal = start_bal
