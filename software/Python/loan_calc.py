@@ -1,6 +1,14 @@
 import os
 import sys
 from datetime import datetime
+import json
+
+LOAN_LABEL = "label"
+LOAN_START_DATE = "start_date"
+LOAN_START_BALANCE = "start_balance"
+LOAN_INTEREST_RATE = "interest_rate"
+LOAN_REMAIN_BALANCE = "balance"
+LOAN_AMOUNT_DUE = "amnount_due"
 
 class Loan(object):
     def __init__(self, label="None", start_date=datetime, start_bal=0, i_rate=0, balance=0, amt_due=0):
@@ -23,11 +31,22 @@ class Loan(object):
                 f"\tcurrent balance\t {self.i_rate}%" + "\n" + \
                 f"\tamount_due\t {self.amt_due}" + "\n"
                 
-    def jsonify():
+    def to_dict(self):
+        """Convert this loans member to a disctionary with key-value pairs"""
+        d = {
+                LOAN_LABEL: self.label,
+                LOAN_START_DATE: self.start_date,
+                LOAN_START_BALANCE: self.start_bal, 
+                LOAN_INTEREST_RATE: self.i_rate,
+                LOAN_REMAIN_BALANCE: self.balance,
+                LOAN_AMOUNT_DUE: self.amt_due,
+            }
+        return d
+
+    def jsonify(self):
         """ Returns a JSON formatted string of this loan """
-        
-        # TODO
-        pass
+        json_str = json.dumps(self.to_dict(),indent=4)
+        return json_str
 
 class LoanTracker(object):
     def __init__(self, loans_list=[]):
