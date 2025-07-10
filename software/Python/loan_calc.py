@@ -48,6 +48,22 @@ class Loan(object):
         json_str = json.dumps(self.to_dict(),indent=4)
         return json_str
 
+    def original_interest(self):
+        """ Return the original interest from the starting balance """
+        interest = self.start_bal * ( self.i_rate / 100)
+        return interest
+
+    def active_interest(self):
+        """ Return the amount of interest on the current principle """
+        interest = self.balance * ( self.i_rate / 100 )
+        return interest
+
+    def daily_interest(self):
+        """ Returns the amount of interest accrued daily (365) on the current principal """
+        interest = self.active_interest() / 365
+        return interest
+        
+
 class LoanTracker(object):
     def __init__(self, loans_list=[]):
         self.loans_list = loans_list
@@ -92,6 +108,24 @@ class LoanTracker(object):
             total += l.balance
 
         return total
+
+    def total_original_interest(self):
+        total = 0
+
+        for l in self.loans_list:
+            total += l.original_interest()
+
+        return total
+
+    def total_active_interest(self):
+        total = 0
+
+        for l in self.loans_list:
+            total += l.active_interest()
+
+        return total
+
+    
 
 
 
