@@ -66,6 +66,34 @@ class LoanTracker(object):
         for l in self.loans_list:
             print(l)
 
+    def total_orig_principal(self):
+        total = 0
+
+        for l in self.loans_list:
+            total += l.start_bal
+
+        return total
+
+
+    def total_amt_due(self) -> float:
+        """ Returns the total amount due for all loans being tracked"""
+        total = 0
+
+        for l in self.loans_list:
+            total += l.amt_due
+
+        return total
+
+    def total_remain_bal(self) -> float:
+        """ Returns the total remaining balance"""
+        total = 0
+
+        for l in self.loans_list:
+            total += l.balance
+
+        return total
+
+
 
 
 if __name__ == "__main__":
