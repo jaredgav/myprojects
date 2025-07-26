@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Car Animation</title>
+	<style>
+		canvas {
+			border: 1px solid black;
+		}
+	</style>
+</head>
+<body>
+	<canvas id="canvas" width="500" height="300"></canvas>
+
+	<script>
+		const canvas = document.getElementById("canvas");
+		const ctx = canvas.getContext("2d");
+
+		// Load the car image
+		const carImg = new Image();
+		carImg.src = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSYPUx7utQo_vBFobrOe4Dfu1D0i-3NMgq2_w&usqp=CAU";
+
+		// Set the initial position of the car
+		let carX = -100;
+		const carY = 150;
+
+		// Set the speed of the car
+		let carSpeed = 30;
+
+		// Define the animation loop
+		function animate() {
+			// Clear the canvas
+			ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+			// Draw the car
+			ctx.drawImage(carImg, carX, carY);
+
+			// Update the position of the car
+			carX += carSpeed;
+
+			// If the car goes off the right edge of the screen, loop it back to the left
+			if (carX > canvas.width) {
+				carX = -carImg.width;
+			}
+
+			// Call the animation loop again
+			requestAnimationFrame(animate);
+		}
+
+		// Start the animation loop
+		animate();
+	</script>
+</body>
+</html>
