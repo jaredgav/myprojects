@@ -44,24 +44,26 @@ class Loan(object):
         return d
 
     def jsonify(self):
-        """ Returns a JSON formatted string of this loan """
+        """ Returns a JSON formatted string of this loan"""
         json_str = json.dumps(self.to_dict(),indent=4)
         return json_str
 
     def original_interest(self):
-        """ Return the original interest from the starting balance """
+        """Return the original interest from the starting balance"""
         interest = self.start_bal * ( self.i_rate / 100)
         return interest
 
-    def active_interest(self):
-        """ Return the amount of interest on the current principle """
+    def current_interest_on_principle(self):
+        """Return the amount of interest on the current principle"""
         interest = self.balance * ( self.i_rate / 100 )
         return interest
 
     def daily_interest(self):
-        """ Returns the amount of interest accrued daily (365) on the current principal """
-        interest = self.active_interest() / 365
+        """Returns the amount of interest accrued daily (365) on the current principal"""
+        interest = self.current_interest_on_principle() / 365
         return interest
+    
+
         
 
 class LoanTracker(object):
@@ -72,7 +74,7 @@ class LoanTracker(object):
         self.loans_list.append(loan)
 
     def load_loans(self, path_to_file):
-        """ Loads in loads from a formated text file
+        """Loads in loads from a formated text file
             Formatted as:
                 name start_date start_balance i_rate balance amt_due
         """
@@ -83,6 +85,7 @@ class LoanTracker(object):
             print(l)
 
     def total_orig_principal(self):
+        """Returns the total original principal for all loans being tracked"""
         total = 0
 
         for l in self.loans_list:
@@ -92,7 +95,7 @@ class LoanTracker(object):
 
 
     def total_amt_due(self) -> float:
-        """ Returns the total amount due for all loans being tracked"""
+        """Returns the total amount due for all loans being tracked"""
         total = 0
 
         for l in self.loans_list:
@@ -101,7 +104,7 @@ class LoanTracker(object):
         return total
 
     def total_remain_bal(self) -> float:
-        """ Returns the total remaining balance"""
+        """Returns the total remaining balance"""
         total = 0
 
         for l in self.loans_list:
@@ -110,6 +113,7 @@ class LoanTracker(object):
         return total
 
     def total_original_interest(self):
+        """Returns the total original interest for all loans being tracked"""
         total = 0
 
         for l in self.loans_list:
@@ -117,17 +121,104 @@ class LoanTracker(object):
 
         return total
 
-    def total_active_interest(self):
+    def total_current_interest_on_principle(self):
+        """Returns the total active interest for all loans being tracked"""
         total = 0
 
         for l in self.loans_list:
-            total += l.active_interest()
+            total += l.current_interest_on_principle()
 
         return total
-
     
+    def total_daily_interest(self):
+        """Returns the total daily interest for all loans being tracked"""
+        total = 0
 
+        for l in self.loans_list:
+            total += l.daily_interest()
 
+        return total
+    
+    def get_highest_interest_loan(self):
+        """Returns the loan with the highest interest rate"""
+        highest = self.loans_list[0]
+
+        for l in self.loans_list:
+            if l.i_rate > highest.i_rate:
+                highest = l
+
+        return highest
+    
+    def get_highest_amt_due(self):
+        """Returns the loan with the highest amount due"""
+        highest = self.loans_list[0]
+
+        for l in self.loans_list:
+            if l.amt_due > highest.amt_due:
+                highest = l
+
+        return highest
+
+class LoanForecaster(object):
+    def __init__(self):
+        pass
+
+    def forecast_next_month_balance(self, loan, monthly_payment_amt, additional_payment_amt=0):
+        """Returns the next balance after a month with a monthly payment of y and an additional payment of z"""
+        interest = loan.current_interest_on_principle() / 12
+        next_balance = loan.balance + interest - monthly_payment_amt - additional_payment_amt
+        return next_balance
+
+    def forecast_next_month_interest(self, loan, monthly_payment_amt, additional_payment_amt=0):
+        """Returns the next interest amount after a month with a monthly payment of y and an additional payment of z"""
+        interest = loan.current_interest_on_principle() / 12
+        return interest
+
+    def forecast_next_month_principal(self, loan, monthly_payment_amt, additional_payment_amt=0):
+        """Returns the next principal balance after a month with a monthly payment of y and an additional payment of z"""
+        interest = loan.current_interest_on_principle() / 12
+        next_principal = loan.balance + interest - monthly_payment_amt - additional_payment_amt
+        return next_principal
+    
+    def forecast_monthly_payoff(self, loan, monthly_payment_amt, num_months, additional_payment_amt=0):
+        """Returns the number of months it will take to pay off this loan with a monthly payment of y and an additional payment of z"""
+        current_balance = loan.balance
+        all_balances = []
+        month = 0
+
+        while current_balance > 0 and month < num_months:
+            interest = current_balance * ( loan.i_rate / 100 ) / 12
+            current_balance += interest - monthly_payment_amt - additional_payment_amt
+            all_balances.append(current_balance)
+            month += 1
+
+        isPaidOff = current_balance <= 0
+        if isPaidOff:
+            print(f"At a monthly payment of ${monthly_payment_amt:.2f} and an additional payment of ${additional_payment_amt:.2f}, this loan will be paid off in {month} months.")
+        else:
+            print(f"At a monthly payment of ${monthly_payment_amt:.2f} and an additional payment of ${additional_payment_amt:.2f}, this loan will not be paid off in {num_months} months. Remaining balance: ${current_balance:.2f}")
+
+        return month, isPaidOff, all_balances
+
+    def forecast_monthly_interest_payoff(self, loan, monthly_payment_amt, num_months):
+        """Returns the amount of interest that will be paid over the next num_months with a monthly payment of y"""
+        total_interest = 0
+        current_balance = loan.balance
+        all_interests = []
+        all_balances = []
+
+        for month in range(num_months):
+            interest = current_balance * ( loan.i_rate / 100 ) / 12
+            all_interests.append(interest)
+            total_interest += interest
+            current_balance += interest - monthly_payment_amt
+            all_balances.append(current_balance)
+
+            if current_balance <= 0:
+                print(f"At a monthly payment of ${monthly_payment_amt:.2f}, this loan will be paid off in {month+1} months. Total interest paid: ${total_interest:.2f}")
+                break
+
+        return total_interest, all_interests, all_balances
 
 
 if __name__ == "__main__":
