@@ -2,6 +2,56 @@ import pytest
 import json
 from loan_calc import *
 
+def simple_test():
+    lt = LoanTracker()
+    lt.add_loan(Loan("GUC", "11/26/23", 11381, 5.5, 11592.24,138.97))
+    lt.add_loan(Loan("KZT", "11/30/23", 11546, 6.77, 13243.74, 167.33))
+
+    lt.print_loans()
+
+def test_load_gabbis_loans_csv():
+    tracker = LoanTracker.from_file("gabbis_loans.csv")
+
+    assert len(tracker.loans_list) == 8
+    assert tracker.loans_list[0].label == "GUC-7034"
+    assert tracker.loans_list[0].start_date == "11/26/23"
+    assert tracker.loans_list[0].start_bal == 11381.00
+    assert tracker.loans_list[0].i_rate == 5.5
+    assert tracker.loans_list[0].balance == 10173.71
+    assert tracker.loans_list[0].amt_due == 138.97
+    assert tracker.loans_list[-1].label == "LVS-6380"
+    assert tracker.loans_list[-1].balance == 0.00
+    assert tracker.loans_list[-1].amt_due == 0.00
+
+
+def test_load_loans_json(tmp_path):
+    loan_file = tmp_path / "loans.json"
+    loan_file.write_text(
+        json.dumps(
+            {
+                "loans": [
+                    {
+                        "label": "GUC-7034",
+                        "start_date": "11/26/23",
+                        "start_balance": "11,381.00",
+                        "interest_rate": "5.5",
+                        "balance": "10,173.71",
+                        "amount_due": "138.97",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    tracker = LoanTracker.from_file(loan_file)
+
+    assert len(tracker.loans_list) == 1
+    assert tracker.loans_list[0].label == "GUC-7034"
+    assert tracker.loans_list[0].start_bal == 11381.00
+    assert tracker.loans_list[0].balance == 10173.71
+    assert tracker.loans_list[0].amt_due == 138.97
+
 def test_to_dict():
     l1 = Loan("GUC", "11/26/23", 11381, 5.5, 11592.24,138.97)
     l2 = Loan("KZT", "11/30/23", 11546, 6.77, 13243.74, 167.33)
@@ -38,12 +88,12 @@ def test_loan_forecasting_interest():
     l2 = Loan("KZT", "11/30/23", 11546, 6.77, 13243.74, 167.33)
     
 
-    result = lf.forecast_interest_payoff(l1, monthly_payment_amt=l1.amt_due, num_months=(12*12))
+    result = lf.forecast_monthly_interest_payoff(l1, monthly_payment_amt=l1.amt_due, num_months=(12*12))
     l1_total_interest_paid = result[0]
     l1_all_interests = result[1]
     l1_all_balances = result[2]
 
-    result = lf.forecast_interest_payoff(l2, monthly_payment_amt=l2.amt_due, num_months=(12*12))
+    result = lf.forecast_monthly_interest_payoff(l2, monthly_payment_amt=l2.amt_due, num_months=(12*12))
     l2_total_interest_paid = result[0]
     l2_all_interests = result[1]
     l2_all_balances = result[2]
