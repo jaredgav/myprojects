@@ -154,7 +154,13 @@ def test_loan_forecasting_monthly_payoff():
     print(f"KZT will be paid off in {l2_months_to_payoff} months: {l2_is_paid_off}")
 
     # Plot the balance over time for each loan
+    
+    import sys
+    is_android = hasattr(sys, "getandroidapilevel")
+    print(f"Running on Android: {is_android}")
+   	 
     import matplotlib.pyplot as plt
+    
     months = list(range(1, max(l1_months_to_payoff, l2_months_to_payoff) + 1))
     plt.figure(figsize=(12, 6))
     plt.plot(months[:len(l1_all_balances)], l1_all_balances, label='GUC Balance')
@@ -165,5 +171,18 @@ def test_loan_forecasting_monthly_payoff():
     plt.legend()
     plt.grid()
     plt.tight_layout()
-    plt.show()
+    
+    if( is_android):
+        from datetime import datetime as dt 
+        plot_img = f"plot_{dt.now().strftime("%Y%m%d_%H%M%S")}.png"
+        plt.savefig(plot_img, dpi=150)
+        print(f"saved img as {plot_img}")        
+    try:
+    	plt.show()
+    except:
+    	print("Warning: Unable to display figure on platform")
+    
+    
+if __name__ == "__main__":
+    test_loan_forecasting_monthly_payoff()
     
