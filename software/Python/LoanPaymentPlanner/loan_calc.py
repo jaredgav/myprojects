@@ -358,9 +358,9 @@ class LoanForecaster(object):
 
         isPaidOff = current_balance <= 0
         if isPaidOff:
-            print(f"At a monthly payment of ${monthly_payment_amt:.2f} and an additional payment of ${additional_payment_amt:.2f}, this loan will be paid off in {month} months.")
+            print(f"At a monthly payment of ${monthly_payment_amt:.2f} and an additional payment of ${additional_payment_amt:.2f}, {loan.label} will be paid off in {month} months.")
         else:
-            print(f"At a monthly payment of ${monthly_payment_amt:.2f} and an additional payment of ${additional_payment_amt:.2f}, this loan will not be paid off in {num_months} months. Remaining balance: ${current_balance:.2f}")
+            print(f"At a monthly payment of ${monthly_payment_amt:.2f} and an additional payment of ${additional_payment_amt:.2f}, {loan.label} will not be paid off in {num_months} months. Remaining balance: ${current_balance:.2f}")
 
         return month, isPaidOff, all_balances
 
@@ -400,4 +400,27 @@ if __name__ == "__main__":
     print(f"Highest interest loan: {gabbisLoanTracker.get_highest_interest_loan().label} at {gabbisLoanTracker.get_highest_interest_loan().i_rate}%")
     print(f"Highest amount due: {gabbisLoanTracker.get_highest_amt_due().label} at ${gabbisLoanTracker.get_highest_amt_due().amt_due:.2f}")
 
+    # Graph the forecasting balance payoff for all loans
+    lf = LoanForecaster()
+    for loan in gabbisLoanTracker.loans_list:
+        result = lf.forecast_monthly_payoff(loan, monthly_payment_amt=loan.amt_due, num_months=(12*12))
+        all_balances = result[2]
+        print(f"Forecasted balance payoff for {loan.label}:")
+        for month, balance in enumerate(all_balances):
+            print(f"\tMonth {month+1}: ${balance:.2f}")
+    
+    # now do the plotting of the balance payoff for all loans
+    import matplotlib.pyplot as plt
+    plt.figure(figsize=(10, 6))
+    for loan in gabbisLoanTracker.loans_list:
+        result = lf.forecast_monthly_payoff(loan, monthly_payment_amt=loan.amt_due, num_months=(12*12))
+        all_balances = result[2]
+        months = list(range(1, len(all_balances) + 1))
+        plt.plot(months, all_balances, label=loan.label)
+    plt.xlabel("Months")
+    plt.ylabel("Balance")
+    plt.title("Forecasted Balance Payoff for Gabbis Loans")
+    plt.legend()
+    plt.grid()
+    plt.show()
 
