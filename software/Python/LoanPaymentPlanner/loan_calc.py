@@ -2,6 +2,7 @@ import csv
 from datetime import datetime
 import json
 from pathlib import Path
+import sys
 
 LOAN_LABEL = "label"
 LOAN_START_DATE = "start_date"
@@ -384,25 +385,28 @@ class LoanForecaster(object):
 
         return total_interest, all_interests, all_balances
 
-if __name__ == "__main__":
-    gabbisLoanTracker = LoanTracker.from_file("gabbis_loans.csv")
-    
+def run_forecaster(path_to_loan: str, title: str):
+    """ Runs the forecaster
+    """
+    # Load the loan file
+    loanTracker = LoanTracker.from_file(path_to_loan)
+        
     print()
-    print("Gabbis Loans:")
-    gabbisLoanTracker.print_loans()
+    print(title)
+    loanTracker.print_loans()
 
-    print(f"Total original principal: ${gabbisLoanTracker.total_orig_principal():.2f}")
-    print(f"Total amount due this month: ${gabbisLoanTracker.total_amt_due():.2f}")
-    print(f"Total remaining balance: ${gabbisLoanTracker.total_remain_bal():.2f}")
-    print(f"Total original interest: ${gabbisLoanTracker.total_original_interest():.2f}")
-    print(f"Total current interest on principle: ${gabbisLoanTracker.total_current_interest_on_principle():.2f}")
-    print(f"Total daily interest: ${gabbisLoanTracker.total_daily_interest():.2f}")
-    print(f"Highest interest loan: {gabbisLoanTracker.get_highest_interest_loan().label} at {gabbisLoanTracker.get_highest_interest_loan().i_rate}%")
-    print(f"Highest amount due: {gabbisLoanTracker.get_highest_amt_due().label} at ${gabbisLoanTracker.get_highest_amt_due().amt_due:.2f}")
+    print(f"Total original principal: ${loanTracker.total_orig_principal():.2f}")
+    print(f"Total amount due this month: ${loanTracker.total_amt_due():.2f}")
+    print(f"Total remaining balance: ${loanTracker.total_remain_bal():.2f}")
+    print(f"Total original interest: ${loanTracker.total_original_interest():.2f}")
+    print(f"Total current interest on principle: ${loanTracker.total_current_interest_on_principle():.2f}")
+    print(f"Total daily interest: ${loanTracker.total_daily_interest():.2f}")
+    print(f"Highest interest loan: {loanTracker.get_highest_interest_loan().label} at {loanTracker.get_highest_interest_loan().i_rate}%")
+    print(f"Highest amount due: {loanTracker.get_highest_amt_due().label} at ${loanTracker.get_highest_amt_due().amt_due:.2f}")
 
     # Graph the forecasting balance payoff for all loans
     lf = LoanForecaster()
-    for loan in gabbisLoanTracker.loans_list:
+    for loan in loanTracker.loans_list:
         result = lf.forecast_monthly_payoff(loan, monthly_payment_amt=loan.amt_due, num_months=(12*12))
         all_balances = result[2]
         print(f"Forecasted balance payoff for {loan.label}:")
@@ -412,7 +416,7 @@ if __name__ == "__main__":
     # now do the plotting of the balance payoff for all loans
     import matplotlib.pyplot as plt
     plt.figure(figsize=(10, 6))
-    for loan in gabbisLoanTracker.loans_list:
+    for loan in loanTracker.loans_list:
         result = lf.forecast_monthly_payoff(loan, monthly_payment_amt=loan.amt_due, num_months=(12*12))
         all_balances = result[2]
         months = list(range(1, len(all_balances) + 1))
@@ -423,4 +427,12 @@ if __name__ == "__main__":
     plt.legend()
     plt.grid()
     plt.show()
+    
+
+if __name__ == "__main__":
+    args = sys.argv
+    file_name = args[1]
+    print(f"File name {file_name}")
+    # run_forecaster("gabbis_loans.csv")
+    run_forecaster("hunters_loans.csv", "Hunter's Loans") 
 

@@ -112,6 +112,53 @@ class LoanPaymentPlanner(object):
 
         return self._add_months(start_date, month)
 
+    def calculate_beneficial_consolidation_interest_rate(self, payoff_plan_config, payoff_plan):
+        """Return the highest nominal APR at which consolidation matches or beats
+        the selected plan's total cost over the configured period.
+
+        The comparison assumes no consolidation fees and keeps the same monthly
+        payment budget (minimum payments plus any extra payment). Any balance
+        left at the end of the period is included in the total cost.
+        """
+        loans = self._loan_payment_data()
+        if not loans:
+            return None
+
+        principal = sum(loan["balance"] for loan in loans)
+        monthly_budget = sum(loan["monthly_payment"] for loan in loans)
+        monthly_budget += self._additional_payment_amount(payoff_plan_config)
+        if principal <= 0 or monthly_budget <= 0:
+            return None
+
+        baseline_paid = sum(month[1] for month in payoff_plan)
+        final_balance = sum(payment[2] for payment in payoff_plan[-1][2]) if payoff_plan else principal
+        baseline_cost = baseline_paid + final_balance
+
+        def consolidated_cost(annual_rate):
+            balance = principal
+            paid = 0
+            monthly_rate = annual_rate / 100 / 12
+            for _ in range(max(0, payoff_plan_config.num_months)):
+                if balance <= 0:
+                    break
+                balance += balance * monthly_rate
+                payment = min(balance, monthly_budget)
+                balance -= payment
+                paid += payment
+            return paid + max(balance, 0)
+
+        # Cost falls as the consolidation rate falls. Find the break-even APR.
+        low, high = 0.0, 100.0
+        if consolidated_cost(low) > baseline_cost:
+            return None
+        for _ in range(80):
+            mid = (low + high) / 2
+            if consolidated_cost(mid) <= baseline_cost:
+                low = mid
+            else:
+                high = mid
+        return low
+
     def _calculate_payoff_plan_by_priority(self, payoff_plan_config, priority_key, reverse=False, additional_payment_amount=None):
         sorted_loans = sorted(self._loan_payment_data(), key=priority_key, reverse=reverse)
         payoff_plan = []
@@ -518,6 +565,17 @@ class LoanPaymentPlannerCli(object):
 
         # Print the payoff plan
         print(retVal)
+
+        consolidation_rate = lp.calculate_beneficial_consolidation_interest_rate(
+            payoff_plan_config, retVal
+        )
+        if consolidation_rate is None:
+            print("Could not determine a beneficial consolidation rate for this plan.")
+        else:
+            print(
+                "Estimated break-even consolidation interest rate: "
+                f"{consolidation_rate:.2f}% APR (before fees)."
+            )
 
         # plot the payoff plan
         lp.plot_payoff_plan(retVal)
