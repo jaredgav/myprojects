@@ -1,6 +1,8 @@
-"""HTML report generation for LoanPaymentResults data."""
+"""HTML reporting and JSON-based plotting for LoanPaymentResults data."""
 
+import argparse
 import html
+import json
 from pathlib import Path
 
 
@@ -110,3 +112,129 @@ def write_html_report(results_data, output_path):
 """
     output_path.write_text(document, encoding="utf-8")
     return output_path
+
+
+def plot_results(results_data):
+    """Recreate the planner's balance and starred-target plot from result JSON."""
+    import matplotlib.pyplot as plt
+
+    graph_data = results_data.get("graph_data", {})
+    balance_series = graph_data.get("balance_series", [])
+    if not balance_series:
+        return None
+
+    fig, ax = plt.subplots()
+    plotted_months = []
+
+    for series in balance_series:
+        points = series.get("points", [])
+        if not points:
+            continue
+        months = [point["month"] for point in points]
+        balances = [point["remaining_balance"] for point in points]
+        plotted_months.extend(months)
+        apr = series.get("annual_interest_rate", 0)
+        ax.plot(
+            months,
+            balances,
+            marker=graph_data.get("balance_line_marker", "o"),
+            markersize=3,
+            label=f"{series['loan']} ({apr:.2f}%)",
+        )
+
+    targets = graph_data.get("starred_targets", [])
+    if targets:
+        target_months = [target["month"] for target in targets]
+        target_balances = [target["remaining_balance"] for target in targets]
+        plotted_months.extend(target_months)
+        ax.scatter(
+            target_months,
+            target_balances,
+            marker=graph_data.get("star_marker", "*"),
+            s=90,
+            color="black",
+            label="Extra Payment Target",
+            zorder=5,
+        )
+        for target in targets:
+            annotation = str(target["loan"])
+            payment_date = target.get("payment_date")
+            if payment_date:
+                try:
+                    from datetime import date
+                    annotation = f"{annotation}\n{date.fromisoformat(payment_date).strftime('%m/%d/%Y')}"
+                except ValueError:
+                    annotation = f"{annotation}\n{payment_date}"
+            ax.annotate(
+                annotation,
+                (target["month"], target["remaining_balance"]),
+                textcoords="offset points",
+                xytext=(0, 8),
+                ha="center",
+                fontsize=8,
+            )
+
+    requested_month = results_data.get("requested_months")
+    if requested_month is not None:
+        requested_month = int(requested_month)
+        ax.axvline(
+            requested_month,
+            color="red",
+            linestyle="--",
+            linewidth=1.5,
+            label=f"Desired Payoff Month ({requested_month})",
+            zorder=4,
+        )
+        plotted_months.append(requested_month)
+
+    ax.set_xlabel(graph_data.get("x_axis", "Month"))
+    ax.set_ylabel(graph_data.get("y_axis", "Amount ($)"))
+    ax.set_title(graph_data.get("chart_title", "Loan Payoff Plan"))
+    tick_interval = max(1, int(graph_data.get("x_tick_interval", 5)))
+    if plotted_months:
+        ax.set_xticks(range(0, max(plotted_months) + tick_interval, tick_interval))
+    ax.grid(True, axis="both")
+    ax.grid(True, axis="x", which="major")
+    ax.legend()
+    fig.tight_layout()
+    plt.show()
+    return fig
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Replot the loan balances and starred targets stored in a planner JSON result."
+    )
+    parser.add_argument(
+        "json_file",
+        nargs="?",
+        type=Path,
+        help="Path to the planner results JSON file (positional form)",
+    )
+    parser.add_argument(
+        "--json-file",
+        "--json",
+        dest="json_option",
+        type=Path,
+        help="Path to the planner results JSON file",
+    )
+    args = parser.parse_args(argv)
+    json_path = args.json_option or args.json_file
+    if json_path is None:
+        parser.error("provide a results JSON file path")
+
+    try:
+        with json_path.open("r", encoding="utf-8") as input_file:
+            results_data = json.load(input_file)
+    except (OSError, json.JSONDecodeError) as error:
+        parser.error(f"could not read results JSON: {error}")
+
+    if not isinstance(results_data, dict) or "graph_data" not in results_data:
+        parser.error("JSON file does not contain planner graph data")
+    if plot_results(results_data) is None:
+        parser.error("JSON file has no balance points to plot")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

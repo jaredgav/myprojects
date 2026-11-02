@@ -622,10 +622,11 @@ class LoanPaymentPlanner(object):
             - This function uses matplotlib to visualize the payoff plan.
             - The payoff_plan parameter is expected to be a list of tuples in the format: (month_number, total_payment_amount, [(loan_name, payment_amount, remaining_balance), ...])
         """
-        import matplotlib.pyplot as plt
-
         if isinstance(payoff_plan, LoanPaymentResults):
-            payoff_plan = payoff_plan.payoff_plan
+            from loan_payment_report import plot_results
+            return plot_results(payoff_plan.to_dict())
+
+        import matplotlib.pyplot as plt
 
         if not payoff_plan:
             return None
@@ -708,6 +709,20 @@ class LoanPaymentPlanner(object):
         #     linestyle="--",
         #     label="Total Paid So Far",
         # )
+        requested_month = getattr(
+            getattr(self, "payoff_plan_config", None), "num_months", None
+        )
+        if requested_month is not None:
+            requested_month = int(requested_month)
+            ax.axvline(
+                requested_month,
+                color="red",
+                linestyle="--",
+                linewidth=1.5,
+                label=f"Desired Payoff Month ({requested_month})",
+                zorder=4,
+            )
+
         ax.set_xlabel("Month")
         ax.set_ylabel("Amount ($)")
         final_month = payoff_plan[-1][0]
@@ -726,7 +741,8 @@ class LoanPaymentPlanner(object):
         )
         ax.set_title(f"Loan Payoff Plan - Total Paid: ${running_total_payment:,.2f} - {payoff_status}")
         ax.legend()
-        ax.set_xticks(range(0, max(months) + 5, 5))
+        plot_end_month = max(max(months), requested_month or 0)
+        ax.set_xticks(range(0, plot_end_month + 5, 5))
         ax.grid(True, axis="both")
         ax.grid(True, axis="x", which="major")
         fig.tight_layout()
