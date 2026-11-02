@@ -1,6 +1,214 @@
 import sys
 import datetime as dt
+import json
+from pathlib import Path
 from  loan_calc import * 
+
+
+class LoanPaymentResults(object):
+    """Complete, exportable output from one loan planner run."""
+
+    def __init__(self, config, loans, payoff_plan, consolidation_rate, calculation_limit_months):
+        self.requested_months = config.num_months
+        self.calculation_limit_months = calculation_limit_months
+        self.payoff_strategy = config.strategy
+        strategy_labels = {
+            1: "Highest Next-Month Interest First",
+            2: "Lowest Balance First",
+            3: "Smallest Monthly Payment First",
+            4: "Minimum Payments Only",
+            5: "Highest Next-Month Payment First",
+        }
+        strategy_details = {
+            1: "Pays the minimum on each active loan and directs extra payment to the loan with the highest projected next-month interest.",
+            2: "Pays the minimum on each active loan and directs extra payment to the active loan with the lowest balance.",
+            3: "Pays the minimum on each active loan and directs extra payment to the active loan with the smallest scheduled monthly payment.",
+            4: "Pays only the scheduled minimum on each loan; no additional payment is assigned to a target loan.",
+            5: "Pays the minimum on each active loan and directs extra payment to the loan with the highest projected next-month payment. The estimate adds one month of projected interest to the stored monthly payment, capped at the projected balance due.",
+        }
+        self.payoff_strategy_name = strategy_labels.get(config.strategy, "Unknown strategy")
+        self.payoff_strategy_description = strategy_details.get(config.strategy, "")
+        self.additional_monthly_payment = float(config.additional_payment_amount or 0)
+        self.start_date = config.start_date.isoformat() if config.start_date else None
+        self.loans = [
+            {
+                "label": loan["label"],
+                "starting_balance": loan["balance"],
+                "base_monthly_payment": loan["monthly_payment"],
+                "annual_interest_rate": loan["monthly_rate"] * 12 * 100,
+            }
+            for loan in loans
+        ]
+        self.payoff_plan = payoff_plan
+        self.consolidation_break_even_apr = consolidation_rate
+        self.months_calculated = len(payoff_plan)
+        self.total_paid = round(sum(month[1] for month in payoff_plan), 2)
+        self.remaining_balance = (
+            round(sum(payment[2] for payment in payoff_plan[-1][2]), 2)
+            if payoff_plan
+            else round(sum(loan["balance"] for loan in loans), 2)
+        )
+        self.is_paid_off = self.remaining_balance <= 0.005
+        self.total_interest_paid = round(
+            self.total_paid + self.remaining_balance
+            - sum(loan["starting_balance"] for loan in self.loans),
+            2,
+        )
+        self.graph_data = self._build_graph_data()
+
+    def _build_graph_data(self):
+        loan_metadata = {loan["label"]: loan for loan in self.loans}
+        balances = {loan["label"]: [] for loan in self.loans}
+        payment_rows = []
+        starred_targets = []
+        cumulative_total = 0
+        cumulative_payments = []
+
+        for month, total_payment, payments in self.payoff_plan:
+            month_row = {"month": month, "total_payment": total_payment, "payments": []}
+            largest_extra = 0
+            starred = None
+            for label, amount, remaining in payments:
+                metadata = loan_metadata.get(label, {})
+                base = min(amount, metadata.get("base_monthly_payment", 0))
+                additional = max(0, amount - base)
+                payment_entry = {
+                    "loan": label,
+                    "base_amount": round(base, 2),
+                    "additional_amount": round(additional, 2),
+                    "total_amount": round(amount, 2),
+                    "remaining_balance": round(remaining, 2),
+                }
+                month_row["payments"].append(payment_entry)
+                balances.setdefault(label, []).append(
+                    {"month": month, "remaining_balance": round(remaining, 2)}
+                )
+                if additional > largest_extra:
+                    largest_extra = additional
+                    starred = {
+                        "loan": label,
+                        "month": month,
+                        "payment_date": self._payment_date(month),
+                        "base_amount": payment_entry["base_amount"],
+                        "additional_amount": payment_entry["additional_amount"],
+                        "total_amount": payment_entry["total_amount"],
+                        "remaining_balance": payment_entry["remaining_balance"],
+                    }
+            payment_rows.append(month_row)
+            if starred and largest_extra > 0.005:
+                starred_targets.append(starred)
+            cumulative_total += total_payment
+            cumulative_payments.append(
+                {"month": month, "cumulative_total_paid": round(cumulative_total, 2)}
+            )
+
+        return {
+            "balance_series": [
+                {
+                    "loan": label,
+                    "annual_interest_rate": loan_metadata.get(label, {}).get("annual_interest_rate", 0),
+                    "points": points,
+                }
+                for label, points in balances.items()
+            ],
+            "monthly_payment_series": [
+                {"month": row["month"], "total_payment": row["total_payment"]}
+                for row in payment_rows
+            ],
+            "cumulative_payment_series": cumulative_payments,
+            "starred_targets": starred_targets,
+            "x_axis": "Month",
+            "y_axis": "Amount ($)",
+            "chart_title": self._chart_title(),
+            "x_tick_interval": 5,
+            "balance_line_marker": "o",
+            "star_marker": "*",
+        }
+
+    def _chart_title(self):
+        if not self.payoff_plan:
+            return "Loan Payoff Plan"
+        final_month = self.payoff_plan[-1][0]
+        if self.start_date:
+            start = dt.date.fromisoformat(self.start_date)
+            month_index = start.month - 1 + final_month
+            year = start.year + month_index // 12
+            month = month_index % 12 + 1
+            days = [31, 29 if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0) else 28,
+                    31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1]
+            payoff_date = start.replace(year=year, month=month, day=min(start.day, days))
+            days_elapsed = (payoff_date - start).days
+        else:
+            days_elapsed = final_month * 30
+        final_balance = sum(payment[2] for payment in self.payoff_plan[-1][2])
+        payoff_status = (
+            f"Paid off in {days_elapsed} days"
+            if final_balance <= 0.005
+            else f"{days_elapsed} days shown"
+        )
+        return f"Loan Payoff Plan - Total Paid: ${self.total_paid:,.2f} - {payoff_status}"
+
+    def _payment_date(self, month_number):
+        if not self.start_date:
+            return None
+        start = dt.date.fromisoformat(self.start_date)
+        month_index = start.month - 1 + month_number
+        year = start.year + month_index // 12
+        month = month_index % 12 + 1
+        days = [31, 29 if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0) else 28,
+                31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1]
+        return start.replace(year=year, month=month, day=min(start.day, days)).isoformat()
+
+    def to_dict(self):
+        return {
+            "requested_months": self.requested_months,
+            "calculation_limit_months": self.calculation_limit_months,
+            "months_calculated": self.months_calculated,
+            "payoff_strategy": self.payoff_strategy,
+            "payoff_strategy_name": self.payoff_strategy_name,
+            "payoff_strategy_description": self.payoff_strategy_description,
+            "start_date": self.start_date,
+            "additional_monthly_payment": self.additional_monthly_payment,
+            "loans": self.loans,
+            "payments_by_month": self._payment_rows(),
+            "graph_data": self.graph_data,
+            "total_paid": self.total_paid,
+            "total_interest_paid": self.total_interest_paid,
+            "remaining_balance": self.remaining_balance,
+            "is_paid_off": self.is_paid_off,
+            "consolidation_break_even_apr": self.consolidation_break_even_apr,
+        }
+
+    def _payment_rows(self):
+        loan_metadata = {loan["label"]: loan for loan in self.loans}
+        rows = []
+        for month, total_payment, payments in self.payoff_plan:
+            rows.append({
+                "month": month,
+                "total_payment": total_payment,
+                "payments": [
+                    {
+                        "loan": label,
+                        "base_amount": round(min(amount, loan_metadata.get(label, {}).get("base_monthly_payment", 0)), 2),
+                        "additional_amount": round(max(0, amount - loan_metadata.get(label, {}).get("base_monthly_payment", 0)), 2),
+                        "total_amount": amount,
+                        "remaining_balance": balance,
+                    }
+                    for label, amount, balance in payments
+                ],
+            })
+        return rows
+
+    def export_json(self, output_path):
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with output_path.open("w", encoding="utf-8") as output_file:
+            json.dump(self.to_dict(), output_file, indent=2)
+        return output_path
+
+    def export_html(self, output_path):
+        from loan_payment_report import write_html_report
+        return write_html_report(self.to_dict(), output_path)
 
 
 class PayoffStrategies(object):
@@ -28,17 +236,61 @@ class LoanPaymentPlanner(object):
 
     def __init__(self, loan_tracker):
         self.loan_tracker = loan_tracker
+        self.source_file = None
 
     def initialize(self, loan_tracker):
         self.loan_tracker = loan_tracker
     
     def load_loans_from_file(self, file_path):
+        self.source_file = Path(file_path)
         self.loan_tracker = self.loan_tracker.from_file(file_path)
     
     def calculate_payoff_plan(self, payoff_plan_config):
         self.payoff_plan_config = payoff_plan_config
-        payoff_strategy = payoff_plan_config.strategy
+        original_months = payoff_plan_config.num_months
+        effective_months = max(1, int(original_months))
+        max_months = max(effective_months, 1200)
 
+        while True:
+            run_config = PayoffPlanConfig(
+                payoff_plan_config.strategy,
+                effective_months,
+                payoff_plan_config.additional_payment_amount,
+                payoff_plan_config.start_date,
+            )
+            payoff_plan = self._calculate_payoff_plan_for_strategy(run_config)
+            if not payoff_plan:
+                break
+            remaining_balance = (
+                sum(payment[2] for payment in payoff_plan[-1][2])
+                if payoff_plan else 0
+            )
+            if remaining_balance <= 0.005 or effective_months >= max_months:
+                break
+            effective_months = min(max_months, max(effective_months * 2, effective_months + 1))
+
+        loans = self._loan_payment_data()
+        consolidation_rate = self.calculate_beneficial_consolidation_interest_rate(
+            payoff_plan_config, payoff_plan
+        )
+        results = LoanPaymentResults(
+            payoff_plan_config, loans, payoff_plan, consolidation_rate, max_months
+        )
+        results.report_paths = self._export_result_reports(results)
+        return results
+
+    def _export_result_reports(self, results):
+        reports_dir = Path(__file__).resolve().parent / "reports"
+        source_stem = self.source_file.stem if self.source_file else "loan_plan"
+        run_stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        report_stem = f"{source_stem}_{run_stamp}"
+        return {
+            "json": results.export_json(reports_dir / f"{report_stem}.json"),
+            "html": results.export_html(reports_dir / f"{report_stem}.html"),
+        }
+
+    def _calculate_payoff_plan_for_strategy(self, payoff_plan_config):
+        payoff_strategy = payoff_plan_config.strategy
         if payoff_strategy == PayoffStrategies.HIGHEST_INTEREST_RATE_FIRST:
             return self.calculate_payoff_plan_highest_interest_rate_first(payoff_plan_config)
         elif payoff_strategy == PayoffStrategies.LOWEST_BALANCE_FIRST:
@@ -114,14 +366,14 @@ class LoanPaymentPlanner(object):
 
     def calculate_beneficial_consolidation_interest_rate(self, payoff_plan_config, payoff_plan):
         """Return the highest nominal APR at which consolidation matches or beats
-        the selected plan's total cost over the configured period.
+        the selected plan's total cost through its calculated horizon.
 
         The comparison assumes no consolidation fees and keeps the same monthly
         payment budget (minimum payments plus any extra payment). Any balance
         left at the end of the period is included in the total cost.
         """
         loans = self._loan_payment_data()
-        if not loans:
+        if not loans or not payoff_plan:
             return None
 
         principal = sum(loan["balance"] for loan in loans)
@@ -138,7 +390,7 @@ class LoanPaymentPlanner(object):
             balance = principal
             paid = 0
             monthly_rate = annual_rate / 100 / 12
-            for _ in range(max(0, payoff_plan_config.num_months)):
+            for _ in range(max(0, len(payoff_plan))):
                 if balance <= 0:
                     break
                 balance += balance * monthly_rate
@@ -273,18 +525,30 @@ class LoanPaymentPlanner(object):
 
         return payoff_plan
 
-    def calculate_payoff_plan_highest_next_monthly_payment_first(self, payoff_plan_config):
-        """ Provides a list of payments for each month based on the highest next monthly payment first payoff strategy.
-            - This strategy assumes that the minimum payment is being made on all loans
-            - Additional payments are applied to the loan with the highest next monthly payment including interest until it is paid off
-            - Each iteration recalculates the next monthly payment for each loan based on the remaining balance and interest
-            - Returns a list of payments for each month and the amount paid towards each loan for that month, as well as the remaining balance for each loan after the payment is applied.
-            - (example of the tuple returned for each month: (month_number, total_payment_amount, [(loan_name, payment_amount, remaining_balance), ...]))
+    def _projected_next_month_payment(self, loan):
+        """Estimate next month's payment as the scheduled payment plus interest.
+
+        The estimate is capped at the balance projected after one month of
+        interest so a nearly paid loan does not rank above its amount due.
         """
-        next_month_interest = lambda loan: loan["balance"] * loan["monthly_rate"]
+        projected_interest = loan["balance"] * loan["monthly_rate"]
+        projected_balance = loan["balance"] + projected_interest
+        return min(
+            projected_balance,
+            loan["monthly_payment"] + projected_interest,
+        )
+
+    def calculate_payoff_plan_highest_next_monthly_payment_first(self, payoff_plan_config):
+        """Pay minimums, then target the loan with the highest projected payment.
+
+        The projected payment is recalculated from each loan's current balance
+        and rate as the plan progresses. It is the stored monthly payment plus
+        one month's projected interest, capped at the projected balance due.
+        """
+        next_month_payment = self._projected_next_month_payment
         sorted_loans = sorted(
             self._loan_payment_data(),
-            key=next_month_interest,
+            key=next_month_payment,
             reverse=True,
         )
 
@@ -304,7 +568,7 @@ class LoanPaymentPlanner(object):
                 loan["balance"] += loan["balance"] * loan["monthly_rate"]
 
             sorted_loans.sort(
-                key=next_month_interest,
+                key=next_month_payment,
                 reverse=True,
             )
 
@@ -322,7 +586,7 @@ class LoanPaymentPlanner(object):
                 if not active_loans:
                     break
 
-                target = max(active_loans, key=next_month_interest)
+                target = max(active_loans, key=next_month_payment)
                 payment = min(target["balance"], remaining_budget)
 
                 if payment <= 0:
@@ -359,6 +623,9 @@ class LoanPaymentPlanner(object):
             - The payoff_plan parameter is expected to be a list of tuples in the format: (month_number, total_payment_amount, [(loan_name, payment_amount, remaining_balance), ...])
         """
         import matplotlib.pyplot as plt
+
+        if isinstance(payoff_plan, LoanPaymentResults):
+            payoff_plan = payoff_plan.payoff_plan
 
         if not payoff_plan:
             return None
@@ -474,7 +741,7 @@ class LoanPaymentPlanner(object):
         print("2. Lowest Balance First")
         print("3. Smallest Monthly Payment First")
         print("4. Minimum Payments Only (No Additional Payments)")
-        print("5. Highest Next-Month Interest First")
+        print("5. Highest Next-Month Payment First")
         strategy_input = input("Enter the number corresponding to your chosen strategy: ")
         strategy_mapping = {
             "1": PayoffStrategies.HIGHEST_INTEREST_RATE_FIRST,
@@ -518,7 +785,7 @@ class LoanPaymentPlannerCli(object):
         elif selected_strategy == PayoffStrategies.MINIMUM_NO_ADDITIONAL_PAYMENTS:
             print("You selected *Minimum Payments Only strategy*.")
         elif selected_strategy == PayoffStrategies.HIGHEST_NEXT_MONTHLY_PAYMENT_FIRST:
-            print("You selected *Highest Next-Month Interest First strategy*.")
+            print("You selected *Highest Next-Month Payment First strategy*.")
         else:
             print(f"Unknown strategy selected {selected_strategy}. Exiting.")
             sys.exit(1)
@@ -561,14 +828,12 @@ class LoanPaymentPlannerCli(object):
         )
 
         # Perform the payoff calculations based on the selected strategy
-        retVal = lp.calculate_payoff_plan(payoff_plan_config)
+        results = lp.calculate_payoff_plan(payoff_plan_config)
 
         # Print the payoff plan
-        print(retVal)
+        print(results.payoff_plan)
 
-        consolidation_rate = lp.calculate_beneficial_consolidation_interest_rate(
-            payoff_plan_config, retVal
-        )
+        consolidation_rate = results.consolidation_break_even_apr
         if consolidation_rate is None:
             print("Could not determine a beneficial consolidation rate for this plan.")
         else:
@@ -577,8 +842,11 @@ class LoanPaymentPlannerCli(object):
                 f"{consolidation_rate:.2f}% APR (before fees)."
             )
 
+        print(f"JSON report written to {results.report_paths['json']}")
+        print(f"HTML report written to {results.report_paths['html']}")
+
         # plot the payoff plan
-        lp.plot_payoff_plan(retVal)
+        lp.plot_payoff_plan(results)
 
 if __name__ == "__main__":
     cli = LoanPaymentPlannerCli()
